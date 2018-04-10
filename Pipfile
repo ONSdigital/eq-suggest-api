@@ -1,0 +1,29 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+flask = "*"
+flask-api = "*"
+logbook = "*"
+humanize = "*"
+
+
+[dev-packages]
+
+pytest = "*"
+pylint = "*"
+mock = "*"
+pytest-cov = "*"
+pytest-sugar = "*"
+pylint-quotes = "*"
+pylint-mccabe = "*"
+
+
+[requires]
+
+python_version = "3.6"
