@@ -5,14 +5,18 @@ sets to be queried with arbitrary terms.  Given a term the API will return a
 set of candidate matches that take an incomplete term, misspellings and typos
 into account.  The API also exposes each data set as paginated resources.
 
-**This is currently a spike.  You can either build an run a docker image or run in a virtual environment**.
+**This is currently a spike with minimal functionality and no tests.**
+  
+You can either build and run a docker container or run in a virtual environment**.  First, clone the repo:
 
-## Build and run a Docker container
-- Install Docker for your system: https://www.docker.com/
-- Clone the repo, build and run the Docker image:
   ```bash
    $ git clone git@github.com:ONSdigital/eq-suggest-api.git
-     ...
+   ```
+   
+## Build and run a Docker container
+- Install Docker for your system: https://www.docker.com/
+- Build and run the Docker image (make sure you are in the directory above the cloned repo):
+  ```bash
    $ docker build eq-suggest-api
      ...
      Step 11/11 : COPY . /usr/src/app
@@ -20,16 +24,13 @@ into account.  The API also exposes each data set as paginated resources.
      Successfully built 00b93410be43
    $ docker run -p 5000:5000 00b93410be43
    ```
-- Optionally tag and push the image.
+- This is a spike, don't tag and push the image.
 
-## Run locally in a virtual environment
-- Clone the repo:
+## Run in a virtual environment
+- Make sure you have a working `pipenv` installation.
+- Install dependencies, activate virtual environment and run:
   ```bash
-   $ git clone git@github.com:ONSdigital/eq-suggest-api.git
-    ```
-
-- Install dependencies, activare virtual environment and run:
-  ```bash
+   $ cd eq-suggest-api
    $ pipenv install --dev
      ...
    $ pipenv shell
@@ -42,7 +43,7 @@ into account.  The API also exposes each data set as paginated resources.
   ```
 
 ## Usage
-To browse the API navigate a browser to `http://localhost:5000`.  You will be redirected to the root of the API at `api/`.  The root resource (Data sets) is a collection of known data sets, e.g:
+To browse the API navigate a browser to `http://localhost:5000`.  You will be redirected to the root of the API at `api/`.  The root resource (`Data sets`) is a collection of known data sets (i.e. the json file in `eq-suggest-api/data`), e.g:
 
 
 ### Data sets (root) resource 
@@ -51,22 +52,23 @@ GET /api
 HTTP 200 OK
 Content-Type: application/json
 [
+    ...
     {
-        "source": "data/counties_english.json",
-        "size_bytes": 496,
-        "size": "496 Bytes",
-        "timestamp_raw": 1522857781.0,
-        "timestamp": "2018-04-04T16:03:01",
-        "item_count": 37,
-        "url": "http://localhost:5000/api/counties_english/",
-        "name": "counties_english"
+        "source": "data/occupations.json",
+        "size_bytes": 881200,
+        "size": "881.2 kB",
+        "timestamp_raw": 1522753154.0,
+        "timestamp": "2018-04-03T10:59:14",
+        "item_count": 32207,
+        "url": "http://localhost:5000/api/occupations/",
+        "name": "occupations"
     },
     ...
 ]
 ```
 
 ### Data set resource 
-By default each contained resource will return a single resource, paginated across the entire list of data set items.
+By default each contained resource will return a single resource, paginated across the entire list of data set items.  You can request a `Data set` resource from any starting point using the `start` query parameter.
 
 ```
 GET /api/industries/
@@ -110,3 +112,15 @@ Content-Type: application/json
     "count": 2
 }
 ```
+
+### Notes
+- The `start` and `q` parameters are ignored when requesting the root resource.
+- The `start` and `q` parameters cannot be mixed, if the `q` parameter is specified then `start` is ignored.
+- When a `Data set` resource is requested without the `q` parameter specified the returned resource will always have the `matches` attribute set to `null`.
+- When a `Data set` resource is requested without without the `q` parameter specified and the returned resource is the first page, the `previous` attribute is set to `null`
+- When a `Data set` resource is requested without without the `q` parameter specified and the returned resource is the last page, the `next` attribute is set to `null`
+- When a `Data set` resource is requested with the `q` parameter specified the returned resource will always have the following attributes set `null`:
+  - `previous`
+  - `next`
+  - `start`
+  - `items`
