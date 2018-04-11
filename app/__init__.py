@@ -26,7 +26,7 @@ PAGE_SIZE = 100
 def root():
     """Root.
 
-    Redirects to /api and the top level resource.
+    Redirects to /api.
     """
     return redirect(url_for('data_sets'))
 
