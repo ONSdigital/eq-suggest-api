@@ -25,6 +25,14 @@ def get_data_sets():
 
 
 def get_data_set_content(path):
+    """Get data set content.
+
+    Given a path, get data set content.  The content is expected to be a simple
+    list of words or phrases.
+
+    :param (str) path: Path to data set file.
+    :returns (list): The list of words or phrases, otherwise an empty list.
+    """
     try:
         with open(path, 'r') as f:
             return json.load(f)
