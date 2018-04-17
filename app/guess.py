@@ -1,4 +1,12 @@
-"""Lookup module."""
+"""Guess module.
+
+Usage:
+
+g = Guess('data/occupations.json')  # Provide a data set
+g.init()                            # Initialise
+g.candidates('3d animator')         # Get candidates for given term
+['Animator', '2D animator', '3D animator', 'VFX animator', ...]
+"""
 import json
 import re
 import string
@@ -15,44 +23,74 @@ class GuessError(Exception):
 
 
 SUBSTITUTES = [
-    ('(', ''), (')', ''), (',', ' '), ('\'', ''), ('"', ''), ('\u2019', ''),
-    ('\u00e5', 'a'), ('\u00e2', 'a'), ('\u00e7', 'c'), ('\u00e9', 'e'),
-    ('\u00e8', 'e')
+    ('(', ''), (')', ''), (',', ' '), ('\'', ''), ('"', ''),
+    ('-', ' '), ('/', ' '), ('\\', ' '), ('_', ' '), (':', ' '),
+    ('\u2019', ''), ('\u00e5', 'a'), ('\u00e2', 'a'), ('\u00e7', 'c'),
+    ('\u00e9', 'e'), ('\u00e8', 'e')
 ]
 
 
 class Guess:
     """Guess.
 
-    Guess a data item match from a simple data source using a given phrase and
-    Bayesian probabilities.  The data source should be a simple json file
-    containing a single list of strings.
+    Guess a word or phrase occurrence in simple data source using a given word
+    or phrase.  The data source should be a simple json file containing a
+    single list of strings.
 
-    Something about cleaned data set and charset ...
-    ...
+    There are two structures that form the index used when making a guess:
 
+    `token_to_item`: A mapping of all known words in the data set to a
+    list of phrases in the data set that contain that word, e.g:
+    token_to_item = {
+      'town': [
+        'town hall superintendent', 'town planner', 'town planning assistant'
+      ],
+      "hall": [
+        "town hall superintendent"
+      ],
+      ...
+    }
+
+    `n_gram_to_tokens`: A mapping of edge n-grams to sets of known words in
+    the data set that relate to the n-gram, e.g:
+
+    n_gram_to_tokens = {
+      "invest":
+        {"investigator', 'investigation', 'investigating', 'investment',
+         'investigations', 'investor', 'investments'},
+      "investi":
+        {'investigator', 'investigation', 'investigating', 'investigations'},
+      ...
+    }
+
+    We use `PhraseLookup` so that the tokens in a query can be transformed
+    into likely known words in the data set before performing an index check.
+    Matched tokens are ranked and filtered then a `MAX_MATCHES` number are
+    returned.
     """
     MIN_N_GRAM_SIZE = 3
-    CHARSET = string.ascii_lowercase + string.digits + 'ÉéåÅÇç’-,()'  # Take out all, should be normalised out?
 
-    def __init__(self, source):
+    def __init__(self, source, max_matches=10):
         """Constructor.
 
         :param (str) source: Path to the json file data source.
+        :param (int) max_matches: Maximum matches to return, default is 10.
         """
         self.source_file = source
+        self.max_matches = max_matches
         self.data = []
-        self.token_to_item_name = defaultdict(list)
+        self.token_to_item = defaultdict(list)
         self.n_gram_to_tokens = defaultdict(set)
-        self.pl = PhraseLookup()
+        self.lookup = PhraseLookup()
 
     def init(self):
-        """Initialise instance.
+        """Initialise.
 
-        Load the specified data source and build mappings to tokens to
-        normalised item names, and also build n-grams and map to tokens.
+        Load the specified data source, initialise the lookup and build
+        mappings.
 
-        :raises: GuessError
+        :raises GuessError: If the specified file is not found or the
+          data set structure is invalid.
         """
         try:
             with open(self.source_file, 'r') as f:
@@ -62,74 +100,123 @@ class Guess:
             raise GuessError(f'Failed to open data source {e}')
         except AssertionError:
             raise GuessError('Data source is not a list')
-        self.pl.prime(self.data)
-        for item in self.data:
-            # TODO Need some others "," "'". Need to cope with "é"
-            norm_item = item.lower().replace("(", "").replace(")", "")
+        self.lookup.prime(self.data)
+        self._build_index(self.data)
+
+    def _build_index(self, data):
+        """Build the search index.
+
+        Normalises the data set to all lower case and using the global
+        SUBSTITUTES list to remove/replace certain characters.  We then build
+        the two pivotal structures used for the index: `token_to_item` and
+        `n_gram_to_tokens`.
+
+        Note we use the original item word or phrase in the lookup but use the
+        normalised version to create the index tokens.
+
+        :param (list) data: List of words or phrases to index.
+        """
+        for item in data:
+            norm_item = item.lower()
+            for substitute in SUBSTITUTES:
+                norm_item = norm_item.replace(substitute[0], substitute[1])
             tokens = norm_item.split()
             for token in tokens:
-                self.token_to_item_name[token].append(norm_item)
+                self.token_to_item[token].append(item)
                 for string_size in range(Guess.MIN_N_GRAM_SIZE, len(token) + 1):
                     n_gram = token[:string_size]
                     self.n_gram_to_tokens[n_gram].add(token)
 
-    def _get_real_tokens_from_possible_n_grams(self, tokens):
-        real_tokens = []
-        for token in tokens:
-            token_set = self.n_gram_to_tokens.get(token, set())
-            real_tokens.extend(list(token_set))
-        return real_tokens
+    def _tokens_from_ngrams(self, tokens):
+        """Tokens from n-grams.
 
-    def _get_scored_items_uncollapsed(self, real_tokens):
+        Treat the provided list of tokens as n-grams and lookup mapped real
+        tokens in `n_gram_to_tokens`.
+
+        :param (list) tokens: List of tokens treated as n-grams.
+        :returns (list): A token set from the index that matches the requests.
+        """
+        token_set = set()
+        for token in tokens:
+            token_set |= self.n_gram_to_tokens.get(token, set())
+        return list(token_set)
+
+    def _ranking_initial(self, real_tokens):
+        """Initial ranking by matching length to token.
+
+        The closer in length a possible match in the token to item lookup is,
+        the higher its score, i.e. 20/20 is score of 1.0 compared to 10/20 is
+        a score of 0.5.  This provides a basic ranking.
+
+        :param (list) real_tokens: Tokens used to lookup possible matches.
+        :returns (list): List of tuples (possible-match, score)
+        """
         scores = []
         for token in real_tokens:
-            possibles = self.token_to_item_name.get(token, [])
+            possibles = self.token_to_item.get(token, [])
             for item in possibles:
-                score = float(len(token)) / len(item.replace(" ", ""))
+                score = len(token) / len(item.replace(' ', ''))
                 scores.append((item, score))
         return scores
 
     @staticmethod
-    def _combined_scores(scores, num_tokens):
-        collapsed_item_to_score = defaultdict(int)
-        collapsed_item_to_occurrence = defaultdict(int)
+    def _ranking_combined(scores, num_tokens):
+        """Combine ranks weighted on occurrence.
+
+        :param (list) scores: List of (possible-match, score) tuples.
+        :param (int) num_tokens: The number of original tokens that were input.
+        :returns (defaultdict): Map of rankings (possible-match->score)
+          with ranks based on initial ranking and occurrences.
+        """
+        ranked_items = defaultdict(int)
+        item_to_occurrence = defaultdict(int)
         for item, score in scores:
-            collapsed_item_to_score[item] += score
-            collapsed_item_to_occurrence[item] += 1
-        for item in collapsed_item_to_score.keys():
-            collapsed_item_to_score[item] *= (
-                    collapsed_item_to_occurrence[item] / float(num_tokens))
-        return collapsed_item_to_score
+            ranked_items[item] += score
+            item_to_occurrence[item] += 1
+        for item in ranked_items:
+            ranked_items[item] *= (item_to_occurrence[item] / num_tokens)
+        return ranked_items
 
-    @staticmethod
-    def _filtered_results(scores):
-        min_results = 3
-        max_results = 10
+    def _filtered_results(self, scores):
+        """Filter results.
+
+        Filter results to maximum number of highest ranked matches.
+
+        :param (defaultdict) scores: Map of rankings (possible-match->score).
+        :returns (list): Up to `self.max_matches` highest ranking results.
+        """
         score_threshold = 0.4
-        scores_list = list(scores)
-        max_possibles = scores_list[:max_results]
-        if scores and scores_list[0][1] == 1.0:
-            return [scores_list[0][0]]
-
-        possibles_within_thresh = [
-            tuple_obj for tuple_obj in scores
-            if tuple_obj[1] >= score_threshold
-        ]
-        min_possibles = (possibles_within_thresh
-                         if len(possibles_within_thresh) > min_results
-                         else max_possibles[:min_results]
-                         )
-        return [tuple_obj[0] for tuple_obj in min_possibles]
+        scores_list = list(scores.items())
+        scores_list.sort(key=lambda t: t[1], reverse=True)
+        possibles_in_threshold = [match for match in scores_list
+                                  if match[1] >= score_threshold
+                                  ]
+        if not possibles_in_threshold:
+            # Nothing in threshold so slice highest of whatever there is
+            possibles_in_threshold = scores_list[:self.max_matches]
+        elif len(possibles_in_threshold) > self.max_matches:
+            # Too many in threshold so take a slice
+            possibles_in_threshold = possibles_in_threshold[:self.max_matches]
+        else:
+            # Not enough in threshold so back-fill
+            spare = scores_list[len(possibles_in_threshold):self.max_matches]
+            possibles_in_threshold = possibles_in_threshold + spare
+        return [match[0] for match in possibles_in_threshold]
 
     def candidates(self, query):
-        tokens = self.pl.lookup_phrase(query)
-        real_tokens = self._get_real_tokens_from_possible_n_grams(tokens)
-        scores = self._get_scored_items_uncollapsed(real_tokens)
-        collapsed_item_to_score = self._combined_scores(scores, len(tokens))
-        scores = collapsed_item_to_score.items()
-        scores_list = list(scores)
-        scores_list.sort(key=lambda t: t[1], reverse=True)
-        return self._filtered_results(scores)
+        """Get candidate matches.
+
+        Main interface of the class, given a query returns a list of candidate
+        matches.
+
+        :param (str) query: Query string.
+        :returns (list): List of candidate matches.
+        """
+        tokens = self.lookup.lookup_phrase(query)
+        real_tokens = self._tokens_from_ngrams(tokens)
+        scores = self._ranking_initial(real_tokens)
+        ranked_items = self._ranking_combined(scores, len(tokens))
+        return self._filtered_results(ranked_items)
 
 
 class PhraseLookup:
