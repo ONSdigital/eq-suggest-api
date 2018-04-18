@@ -14,13 +14,8 @@ def get_data_sets():
     """List of available data sets."""
     ds_info = {}
     for path in glob.glob('data/*.json'):
-        try:
-            name = os.path.split(path)[1].split('.json')[0]
-        except IndexError as e:
-            log.error(f'Failed to determine data set name: {e}')
-            continue
-        else:
-            ds_info[name] = _summary(path)
+        name = os.path.split(path)[1].split('.')[0]
+        ds_info[name] = _summary(path)
     return ds_info
 
 
@@ -50,7 +45,9 @@ def _summary(path):
     try:
         status = os.stat(path)
     except (FileNotFoundError, OSError):
-        return {'error': 'Cannot status data'}
+        return {'source': path,
+                'error': 'Invalid path, cannot status data'
+                }
     else:
         dts = datetime.datetime.utcfromtimestamp(status.st_mtime).isoformat()
         size = humanize.naturalsize(status.st_size)
