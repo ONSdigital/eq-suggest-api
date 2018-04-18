@@ -11,7 +11,6 @@ flask = "*"
 flask-api = "*"
 logbook = "*"
 humanize = "*"
-pytest-logbook = "*"
 
 
 [dev-packages]
@@ -23,6 +22,7 @@ pytest-cov = "*"
 pytest-sugar = "*"
 pylint-quotes = "*"
 pylint-mccabe = "*"
+pytest-logbook = "*"
 
 
 [requires]
