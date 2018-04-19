@@ -69,6 +69,7 @@ class Guess:
     returned.
     """
     MIN_N_GRAM_SIZE = 3
+    SCORE_THRESHOLD = 0.4
 
     def __init__(self, source, max_matches=10):
         """Constructor.
@@ -95,11 +96,10 @@ class Guess:
         try:
             with open(self.source_file, 'r') as f:
                 self.data = json.load(f)
-                assert isinstance(self.data, list)
         except FileNotFoundError as e:
             raise GuessError(f'Failed to open data source {e}')
-        except AssertionError:
-            raise GuessError('Data source is not a list')
+        except json.decoder.JSONDecodeError:
+            raise GuessError('Data source is invalid')
         self.lookup.prime(self.data)
         self._build_index(self.data)
 
@@ -185,11 +185,10 @@ class Guess:
         :param (defaultdict) scores: Map of rankings (possible-match->score).
         :returns (list): Up to `self.max_matches` highest ranking results.
         """
-        score_threshold = 0.4
         scores_list = list(scores.items())
         scores_list.sort(key=lambda t: t[1], reverse=True)
         possibles_in_threshold = [match for match in scores_list
-                                  if match[1] >= score_threshold
+                                  if match[1] >= self.SCORE_THRESHOLD
                                   ]
         if not possibles_in_threshold:
             # Nothing in threshold so slice highest of whatever there is
@@ -309,7 +308,7 @@ class PhraseLookup:
         Given a set of words, returns the subset that are in the model, i.e.
         known words.
 
-        :param (set) words: A list of words.
+        :param (set) words: A set of words.
         :returns (set): The subset of words that are known to the model.
         """
         return set(w for w in words if w in self.model)
