@@ -21,7 +21,7 @@ def test_get_data_set_content(fake_data_set):
     ds = app.registry.get_data_set_content(fake_data_set)
     assert isinstance(ds, list)
     assert len(ds) == 20
-    assert {'Bacon', 'Eggs', 'Baked Beans'}.issubset(set(ds))
+    assert {'Bacon', 'Eggs', 'Baked Beans'} <= set(ds)
 
 
 def test_get_data_set_content_invalid(fake_data_set_invalid, loghandler):
