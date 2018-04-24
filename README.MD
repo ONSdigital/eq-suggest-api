@@ -5,26 +5,29 @@ sets to be queried with arbitrary terms.  Given a term the API will return a
 set of candidate matches that take an incomplete term, misspellings and typos
 into account.  The API also exposes each data set as paginated resources.
 
-**This is currently a spike with minimal functionality and no tests.**
-  
 You can either build and run a docker container or run in a virtual environment**.  First, clone the repo:
 
   ```bash
    $ git clone git@github.com:ONSdigital/eq-suggest-api.git
    ```
    
+## Run a docker container
+- Pull from docker hub and run: 
+  ```bash
+  $ docker run -p 5000:5000 onsdigital/eq-suggest-api
+  ```
+ 
 ## Build and run a Docker container
 - Install Docker for your system: https://www.docker.com/
-- Build and run the Docker image (make sure you are in the directory above the cloned repo):
+- Build and run the Docker image (make sure you are in the directory of the cloned repo):
   ```bash
-   $ docker build eq-suggest-api
+   $ docker build ../eq-suggest-api
      ...
      Step 11/11 : COPY . /usr/src/app
      ---> 00b93410be43
      Successfully built 00b93410be43
    $ docker run -p 5000:5000 00b93410be43
    ```
-- This is a spike, don't tag and push the image.
 
 ## Run in a virtual environment
 - Make sure you have a working `pipenv` installation.
