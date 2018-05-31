@@ -1,11 +1,34 @@
-"""Guess module.
+"""Guess search strategy.
 
-Usage:
+There are three structures that form the index used when making a guess:
 
-g = Guess('data/occupations.json')  # Provide a data set
-g.init()                            # Initialise
-g.candidates('3d animator')         # Get candidates for given term
-['Animator', '2D animator', '3D animator', 'VFX animator', ...]
+`token_to_item`: A mapping of all known words in the data set to a
+list of phrases in the data set that contain that word, e.g:
+token_to_item = {
+  'town': [
+    'town hall superintendent', 'town planner', 'town planning assistant'
+  ],
+  "hall": [
+    "town hall superintendent"
+  ],
+  ...
+}
+
+`n_gram_to_tokens`: A mapping of edge n-grams to sets of known words in
+the data set that relate to the n-gram, e.g:
+
+n_gram_to_tokens = {
+  "invest":
+    {"investigator', 'investigation', 'investigating', 'investment',
+     'investigations', 'investor', 'investments'},
+  "investi":
+    {'investigator', 'investigation', 'investigating', 'investigations'},
+  ...
+}
+
+Additionally, `PhraseLookup` used so that the tokens in a query can be
+transformed into likely known words in the data set before performing an
+index check.
 """
 import json
 import re
@@ -13,97 +36,48 @@ import string
 
 from collections import defaultdict
 
+import logbook
 
-class GuessError(Exception):
-    """Guess error.
+import app.strategy as strategy
 
-    Raised when Guess operation errors occur.
-    """
-    pass
+log = logbook.Logger(__name__)
 
-
-SUBSTITUTES = [
-    ('(', ''), (')', ''), (',', ' '), ('\'', ''), ('"', ''),
-    ('-', ' '), ('/', ' '), ('\\', ' '), ('_', ' '), (':', ' '),
-    ('\u2019', ''), ('\u00e5', 'a'), ('\u00e2', 'a'), ('\u00e7', 'c'),
-    ('\u00e9', 'e'), ('\u00e8', 'e')
-]
+STRATEGY_NAME = 'guess'
 
 
-class Guess:
-    """Guess.
+class Guess(strategy.Strategy):
+    """Guess search strategy.
 
     Guess a word or phrase occurrence in simple data source using a given word
     or phrase.  The data source should be a simple json file containing a
     single list of strings.
-
-    There are two structures that form the index used when making a guess:
-
-    `token_to_item`: A mapping of all known words in the data set to a
-    list of phrases in the data set that contain that word, e.g:
-    token_to_item = {
-      'town': [
-        'town hall superintendent', 'town planner', 'town planning assistant'
-      ],
-      "hall": [
-        "town hall superintendent"
-      ],
-      ...
-    }
-
-    `n_gram_to_tokens`: A mapping of edge n-grams to sets of known words in
-    the data set that relate to the n-gram, e.g:
-
-    n_gram_to_tokens = {
-      "invest":
-        {"investigator', 'investigation', 'investigating', 'investment',
-         'investigations', 'investor', 'investments'},
-      "investi":
-        {'investigator', 'investigation', 'investigating', 'investigations'},
-      ...
-    }
-
-    We use `PhraseLookup` so that the tokens in a query can be transformed
-    into likely known words in the data set before performing an index check.
-    Matched tokens are ranked and filtered then a `MAX_MATCHES` number are
-    returned.
     """
     MIN_N_GRAM_SIZE = 3
     SCORE_THRESHOLD = 0.4
 
-    def __init__(self, source, max_matches=10):
+    def __init__(self, data_file, max_matches=10):
         """Constructor.
 
-        :param (str) source: Path to the json file data source.
+        :param (str) data_file: Path to the json file data file.
         :param (int) max_matches: Maximum matches to return, default is 10.
         """
-        self.source_file = source
         self.max_matches = max_matches
-        self.data = []
         self.token_to_item = defaultdict(list)
         self.n_gram_to_tokens = defaultdict(set)
-        self.lookup = PhraseLookup()
+        self.lookup = None
+        super().__init__(data_file, STRATEGY_NAME)
 
     def init(self):
         """Initialise.
 
-        Load the specified data source, initialise the lookup and build
-        mappings.
-
-        :raises GuessError: If the specified file is not found or the
-          data set structure is invalid.
+        Calls base implementation to load or lazily build the indexes.
         """
-        try:
-            with open(self.source_file, 'r') as f:
-                self.data = json.load(f)
-        except FileNotFoundError as e:
-            raise GuessError(f'Failed to open data source {e}')
-        except json.decoder.JSONDecodeError:
-            raise GuessError('Data source is invalid')
-        self.lookup.prime(self.data)
-        self._build_index(self.data)
+        idx = super().init()
+        self.lookup = idx['lookup']
+        self.token_to_item = idx['token_to_item']
+        self.n_gram_to_tokens = idx['n_gram_to_tokens']
 
-    def _build_index(self, data):
+    def build_index(self):
         """Build the search index.
 
         Normalises the data set to all lower case and using the global
@@ -113,19 +87,32 @@ class Guess:
 
         Note we use the original item word or phrase in the lookup but use the
         normalised version to create the index tokens.
-
-        :param (list) data: List of words or phrases to index.
         """
+        try:
+            with open(self.data_file, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError as e:
+            raise strategy.StrategyError(f'Failed to open data source: {e}')
+        except json.decoder.JSONDecodeError as e:
+            raise strategy.StrategyError(f'Data source is invalid: {e}')
+        token_to_item = defaultdict(list)
+        n_gram_to_tokens = defaultdict(set)
         for item in data:
             norm_item = item.lower()
-            for substitute in SUBSTITUTES:
+            for substitute in strategy.SUBSTITUTES:
                 norm_item = norm_item.replace(substitute[0], substitute[1])
             tokens = norm_item.split()
             for token in tokens:
-                self.token_to_item[token].append(item)
+                token_to_item[token].append(item)
                 for string_size in range(Guess.MIN_N_GRAM_SIZE, len(token) + 1):
                     n_gram = token[:string_size]
-                    self.n_gram_to_tokens[n_gram].add(token)
+                    n_gram_to_tokens[n_gram].add(token)
+        lookup = PhraseLookup()
+        lookup.prime(data)
+        idx = {'n_gram_to_tokens': n_gram_to_tokens,
+               'token_to_item': token_to_item,
+               'lookup': lookup}
+        return idx
 
     def _tokens_from_ngrams(self, tokens):
         """Tokens from n-grams.
@@ -211,7 +198,7 @@ class Guess:
         :param (str) query: Query string.
         :returns (list): List of candidate matches.
         """
-        tokens = self.lookup.lookup_phrase(query)
+        tokens = self.lookup.lookup_phrase(query.lower())
         real_tokens = self._tokens_from_ngrams(tokens)
         scores = self._ranking_initial(real_tokens)
         ranked_items = self._ranking_combined(scores, len(tokens))
@@ -251,7 +238,7 @@ class PhraseLookup:
         :returns (list): Normalised list of data set words.
         """
         all_text = ' '.join(data).lower()
-        for substitute in SUBSTITUTES:
+        for substitute in strategy.SUBSTITUTES:
             all_text = all_text.replace(substitute[0], substitute[1])
         return re.findall('[a-z0-9]+', all_text)
 
@@ -278,16 +265,19 @@ class PhraseLookup:
         replacements and inserts. Due to the likelihood of duplicates we
         return a set.
 
+        Optionally add other misspellings like this:
+        transposes = [a + b[1] + b[0] + b[2:] for a, b in splits if len(b) > 1]
+        replaces = [a + c + b[1:] for a, b in splits for c in charset if b]
+        return set(deletes + transposes + replaces + inserts)
+
         :param (str) word: Word to generate single edits for.
         :returns (set): The set of all single edits.
         """
         charset = string.ascii_lowercase + string.digits
         splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
         deletes = [a + b[1:] for a, b in splits if b]
-        transposes = [a + b[1] + b[0] + b[2:] for a, b in splits if len(b) > 1]
-        replaces = [a + c + b[1:] for a, b in splits for c in charset if b]
         inserts = [a + c + b for a, b in splits for c in charset]
-        return set(deletes + transposes + replaces + inserts)
+        return set(deletes + inserts)
 
     @staticmethod
     def _double_edits(word):
@@ -324,7 +314,7 @@ class PhraseLookup:
         """
         candidates = (self._known({word}) or
                       self._known(self._single_edits(word)) or
-                      self._known(self._double_edits(word)) or
+                      # self._known(self._double_edits(word)) or
                       {word})
         return max(candidates, key=self.model.get)
 

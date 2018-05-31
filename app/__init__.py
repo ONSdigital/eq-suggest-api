@@ -4,11 +4,12 @@ import sys
 
 from logbook import Logger, StreamHandler
 
-from flask import request, redirect, url_for
+from flask import abort, request, redirect, url_for
 from flask_api import FlaskAPI, exceptions
 
 from . import guess
 from . import registry
+from . import simple
 
 
 app = FlaskAPI(__name__)
@@ -20,6 +21,7 @@ log.info('Logging configured')
 
 
 PAGE_SIZE = 25
+ALL_STRATEGIES = [guess.STRATEGY_NAME, simple.STRATEGY_NAME]
 
 
 @app.route('/', methods=['GET'])
@@ -71,7 +73,8 @@ def data_set(key):
     query = request.args.get('q')
     page_size = int(request.args.get('size', PAGE_SIZE))
     if query:
-        matches = _get_suggestions(source, query, page_size)
+        strategy = request.args.get('s', guess.STRATEGY_NAME).lower()
+        matches = _get_suggestions(source, query, page_size, strategy)
         return dict(previous=None, next=None, start=None,
                     matches=matches, items=None, count=len(matches))
     else:
@@ -88,18 +91,24 @@ def after_request(response):
     return response
 
 
-def _get_suggestions(data_set_source, query, page_size):
+def _get_suggestions(data_set_source, query, page_size, strategy):
     """Get suggestions.
 
     Get suggestions for a given query string.
 
     :param (str) data_set_source: Data set to query.
     :param (str) query: Query string.
+    :param (str) strategy: Search strategy to use.
     :returns (list): List of 10 candidates
     """
-    g = guess.Guess(data_set_source, page_size)
+    if strategy not in ALL_STRATEGIES:
+        abort(400)
+    if strategy == simple.STRATEGY_NAME:
+        g = simple.Simple(data_set_source, max_matches=page_size)
+    else:
+        g = guess.Guess(data_set_source, max_matches=page_size)
     g.init()
-    return g.candidates(query)[:page_size]
+    return g.candidates(query)
 
 
 def _paginate(data, url, start, page_size):
