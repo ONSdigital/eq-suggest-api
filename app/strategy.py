@@ -21,6 +21,8 @@ SUBSTITUTES = [
     ('\u00e9', 'e'), ('\u00e8', 'e')
 ]
 
+INDEX_LOCATION = 'index'
+
 
 class Strategy:
     """Strategy."""
@@ -68,9 +70,10 @@ class Strategy:
     @staticmethod
     def index_name(path, strategy):
         """Build an index file name."""
-        if not os.path.exists('index'):
-            os.makedirs('index')
-        pth = os.path.join('index', path.split('.json')[0].replace('/', '_'))
+        if not os.path.exists(INDEX_LOCATION):
+            os.makedirs(INDEX_LOCATION)
+        pth = os.path.join(INDEX_LOCATION,
+                           path.split('.json')[0].replace('/', '_'))
         return f'{pth}_{strategy}.idx'
 
     @staticmethod

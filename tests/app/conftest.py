@@ -2,8 +2,22 @@
 
 App local `pytest` fixtures.
 """
+import mock
 import pytest
 import json
+
+import app.strategy as strategy
+
+
+@pytest.fixture
+def fake_strategy():
+
+    class FakeStrategy(strategy.Strategy):
+
+        def candidates(self, query):
+            return mock.Mock()
+
+    return FakeStrategy
 
 
 @pytest.fixture
