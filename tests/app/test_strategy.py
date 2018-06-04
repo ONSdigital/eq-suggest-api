@@ -33,7 +33,7 @@ def test_strategy_instance(monkeypatch, fake_strategy):
     assert fake_strategy.store_index.called is False
 
 
-def test_strategy_instance_build(monkeypatch, fake_strategy, fake_data_set):
+def test_strategy_instance_build(monkeypatch, fake_strategy):
     fake_index = [1, 2, 3, 4]
     mock_load = mock.Mock(return_value=None)
     mock_store = mock.Mock(return_value=None)

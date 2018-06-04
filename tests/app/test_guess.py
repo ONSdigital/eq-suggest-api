@@ -3,20 +3,19 @@ import pytest
 
 import collections
 
-from app.guess import Guess, GuessError, PhraseLookup
+import app.strategy as strategy
+from app.guess import Guess, PhraseLookup
 
 
 def test_guess():
     g = Guess('/foo/bar')
-    assert g.source_file == '/foo/bar'
+    assert g.data_file == '/foo/bar'
     assert g.max_matches == 10
-    assert not len(g.data)
     assert isinstance(g.token_to_item, collections.defaultdict)
     assert not len(g.token_to_item)
     assert isinstance(g.n_gram_to_tokens, collections.defaultdict)
     assert not len(g.n_gram_to_tokens)
-    assert isinstance(g.lookup, PhraseLookup)
-    assert g.lookup.model is None
+    assert g.lookup is None
 
 
 def test_guess_max():
@@ -25,33 +24,37 @@ def test_guess_max():
 
 
 def test_guess_init(monkeypatch, fake_data_set):
-    g = Guess(fake_data_set)
-    fake_lookup = mock.Mock()
-    fake_build_index = mock.Mock()
-    monkeypatch.setattr(g.lookup, 'prime', fake_lookup)
-    monkeypatch.setattr(g, '_build_index', fake_build_index)
+    fake_lookup = PhraseLookup()
+    fake_index = {'n_gram_to_tokens': [1, 2, 3],
+                  'token_to_item': [4, 5, 6],
+                  'lookup': fake_lookup}
+    fake_build_index = mock.Mock(return_value=fake_index)
+    monkeypatch.setattr(Guess, 'build_index', fake_build_index)
+    g = Guess(fake_data_set.strpath)
     g.init()
-    fake_lookup.assert_called_with(g.data)
-    fake_build_index.assert_called_with(g.data)
+    fake_build_index.assert_called()
+    assert g.lookup is fake_index['lookup']
+    assert g.token_to_item is fake_index['token_to_item']
+    assert g.n_gram_to_tokens is fake_index['n_gram_to_tokens']
 
 
 def test_guess_init_no_file():
     g = Guess('foo/bar.json')
-    with pytest.raises(GuessError) as e:
+    with pytest.raises(strategy.StrategyError) as e:
         g.init()
         assert 'Failed to open data source' in e
 
 
 def test_guess_init_bad_file(fake_data_set_invalid):
-    g = Guess(fake_data_set_invalid)
-    with pytest.raises(GuessError) as e:
+    g = Guess(fake_data_set_invalid.strpath)
+    with pytest.raises(strategy.StrategyError) as e:
         g.init()
         assert 'Data source is invalid' in e
 
 
-def test_guess_build_index(fake_data_set_data):
-    g = Guess('/foo/bar')
-    g._build_index(fake_data_set_data)
+def test_guess_build_index(fake_data_set):
+    g = Guess(fake_data_set.strpath)
+    g.init()
     assert len(g.token_to_item)
     expected = {'Eggs', 'Fried Eggs', 'Scrambled Eggs', 'Poached Eggs'}
     assert set(g.token_to_item['eggs']) - expected == set()
@@ -61,16 +64,16 @@ def test_guess_build_index(fake_data_set_data):
     assert g.n_gram_to_tokens['toast'] == {'toast'}
 
 
-def test_guess_tokens_from_ngrams(fake_data_set_data):
-    g = Guess('/foo/bar')
-    g._build_index(fake_data_set_data)
+def test_guess_tokens_from_ngrams(fake_data_set):
+    g = Guess(fake_data_set.strpath)
+    g.init()
     expected = {'toast', 'eggs', 'sausage'}
     result = g._tokens_from_ngrams(['toa', 'egg', 'saus', 'sausag', 'sausage'])
     assert set(result) - expected == set()
 
 
 def test_guess_ranking_initial(fake_data_set):
-    g = Guess(fake_data_set)
+    g = Guess(fake_data_set.strpath)
     g.init()
     result = g._ranking_initial(['toast', 'eggs', 'sausage'])
     mapped = {score[0]: score[1] for score in result}
@@ -86,7 +89,7 @@ def test_guess_ranking_initial(fake_data_set):
 
 
 def test_guess_ranking_combined(fake_data_set):
-    g = Guess(fake_data_set)
+    g = Guess(fake_data_set.strpath)
     g.init()
     scores = g._ranking_initial(['toast'])
     ranked = g._ranking_combined(scores, 1)
@@ -98,7 +101,7 @@ def test_guess_ranking_combined(fake_data_set):
 
 
 def test_guess_filtered_results(fake_data_set):
-    g = Guess(fake_data_set)
+    g = Guess(fake_data_set.strpath)
     g.init()
     scores = g._ranking_initial(['veggie', 'sausage'])
     ranked = g._ranking_combined(scores, 1)
@@ -109,7 +112,7 @@ def test_guess_filtered_results(fake_data_set):
 
 
 def test_guess_filtered_results_above_threshold(fake_data_set_too_many_chiefs):
-    g = Guess(fake_data_set_too_many_chiefs)
+    g = Guess(fake_data_set_too_many_chiefs.strpath)
     g.SCORE_THRESHOLD = 0.2  # Drop threshold to include plenty of results
     g.init()
     scores = g._ranking_initial(['chief', 'executive', 'officer'])
@@ -125,7 +128,7 @@ def test_guess_filtered_results_above_threshold(fake_data_set_too_many_chiefs):
 
 
 def test_guess_filtered_results_below_threshold(fake_data_set_large):
-    g = Guess(fake_data_set_large)
+    g = Guess(fake_data_set_large.strpath)
     g.init()
     scores = g._ranking_initial(['islands'])
     ranked = g._ranking_combined(scores, 1)
@@ -144,7 +147,7 @@ def test_guess_filtered_results_below_threshold(fake_data_set_large):
 
 
 def test_guess_filtered_results_no_possibles(fake_data_set_large):
-    g = Guess(fake_data_set_large)
+    g = Guess(fake_data_set_large.strpath)
     g.init()
     scores = g._ranking_initial(['virgin'])
     ranked = g._ranking_combined(scores, 1)
@@ -161,10 +164,10 @@ def test_guess_filtered_results_no_possibles(fake_data_set_large):
 
 
 def test_guess_candidates(monkeypatch, fake_data_set):
-    g = Guess(fake_data_set)
+    g = Guess(fake_data_set.strpath)
     fake_method = mock.Mock(return_value=['eggs', 'fried'])
-    monkeypatch.setattr(g.lookup, 'lookup_phrase', fake_method)
     g.init()
+    monkeypatch.setattr(g.lookup, 'lookup_phrase', fake_method)
     results = g.candidates('foo')
     fake_method.assert_called_with('foo')
     assert 'Fried Eggs' in results
@@ -176,19 +179,13 @@ def test_phrase_lookup_edits_single():
     single_edits = PhraseLookup._single_edits(term)
     # Deletes
     assert {'wor', 'wrd', 'ord'} <= single_edits
-    # Transposes
-    assert {'owrd', 'wrod', 'wodr'} <= single_edits
-    # Replaces
-    assert {'0ord', 'wzrd', 'worx'} <= single_edits
-    # Inserts
     assert {'w9ord', 'worzd', 'words'} <= single_edits
-    # And overall; for a word of length n, there will be n deletions,
-    # n - 1 transpositions, 36n alterations, and 36(n + 1) insertions.
-    # Expect 2n - 1 duplicates that appear in the set once.
-    # Note that 36 == len(a-z0-9)
+    # Overall, for a word of length n there will be n deletions,
+    # and 36(n + 1) insertions. Expect n duplicates that appear in the set
+    # once. Note that 36 == len(a-z0-9)
     n = len(term)
-    total = n + (n-1) + (36*n) + (36*(n+1))
-    set_total = total - (2*n - 1)
+    total = n + (36*(n+1))
+    set_total = total - n
     assert set_total == len(single_edits)
 
 
@@ -209,7 +206,7 @@ def test_phrase_lookup_known(fake_data_set_data):
 def test_phrase_lookup_phrase(fake_data_set_data):
     p = PhraseLookup()
     p.prime(fake_data_set_data)
-    result = p.lookup_phrase('bacin ergs tiast')
+    result = p.lookup_phrase('bacn erggs to0ast')
     assert 'bacon' in result
     assert 'eggs' in result
     assert 'toast' in result
