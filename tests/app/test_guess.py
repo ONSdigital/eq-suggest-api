@@ -189,14 +189,6 @@ def test_phrase_lookup_edits_single():
     assert set_total == len(single_edits)
 
 
-def test_phrase_lookup_edits_double():
-    term = 'word'
-    edits = PhraseLookup._single_edits(term)
-    double_edits = PhraseLookup._double_edits(term)
-    expected = set(e2 for e1 in edits for e2 in PhraseLookup._single_edits(e1))
-    assert double_edits - expected == set()
-
-
 def test_phrase_lookup_known(fake_data_set_data):
     p = PhraseLookup()
     p.prime(fake_data_set_data)

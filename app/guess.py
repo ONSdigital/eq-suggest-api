@@ -279,19 +279,6 @@ class PhraseLookup:
         inserts = [a + c + b for a, b in splits for c in charset]
         return set(deletes + inserts)
 
-    @staticmethod
-    def _double_edits(word):
-        """Set of double edits.
-
-        Using single edit misspellings returns a set of words that are two
-        edits away.
-
-        :param (str) word: Word to generate edits for.
-        :returns (set): The set of all double edits.
-        """
-        return set(e2 for e1 in PhraseLookup._single_edits(word)
-                   for e2 in PhraseLookup._single_edits(e1))
-
     def _known(self, words):
         """Set of known words.
 
@@ -314,7 +301,6 @@ class PhraseLookup:
         """
         candidates = (self._known({word}) or
                       self._known(self._single_edits(word)) or
-                      # self._known(self._double_edits(word)) or
                       {word})
         return max(candidates, key=self.model.get)
 
