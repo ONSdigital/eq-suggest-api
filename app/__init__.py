@@ -99,14 +99,15 @@ def _get_suggestions(data_set_source, query, page_size, strategy):
     :param (str) data_set_source: Data set to query.
     :param (str) query: Query string.
     :param (str) strategy: Search strategy to use.
-    :returns (list): List of 10 candidates
+    :returns (list): List of candidate matches.
     """
-    if strategy not in ALL_STRATEGIES:
-        abort(400)
     if strategy == simple.STRATEGY_NAME:
         g = simple.Simple(data_set_source, max_matches=page_size)
-    else:
+    elif strategy == guess.STRATEGY_NAME:
         g = guess.Guess(data_set_source, max_matches=page_size)
+    else:
+        g = None
+        abort(400)
     g.init()
     return g.candidates(query)
 
