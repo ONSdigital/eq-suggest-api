@@ -19,7 +19,7 @@ log = Logger(__name__)
 log.info('Logging configured')
 
 
-PAGE_SIZE = 100
+PAGE_SIZE = 25
 
 
 @app.route('/', methods=['GET'])
@@ -69,8 +69,9 @@ def data_set(key):
         raise exceptions.NotFound()
     source = all_data_sets[key]['source']
     query = request.args.get('q')
+    page_size = int(request.args.get('size', PAGE_SIZE))
     if query:
-        matches = _get_suggestions(source, query)
+        matches = _get_suggestions(source, query, page_size)
         return dict(previous=None, next=None, start=None,
                     matches=matches, items=None, count=len(matches))
     else:
@@ -87,7 +88,7 @@ def after_request(response):
     return response
 
 
-def _get_suggestions(data_set_source, query):
+def _get_suggestions(data_set_source, query, page_size):
     """Get suggestions.
 
     Get suggestions for a given query string.
@@ -96,12 +97,12 @@ def _get_suggestions(data_set_source, query):
     :param (str) query: Query string.
     :returns (list): List of 10 candidates
     """
-    g = guess.Guess(data_set_source)
+    g = guess.Guess(data_set_source, page_size)
     g.init()
-    return g.candidates(query)[:10]
+    return g.candidates(query)[:page_size]
 
 
-def _paginate(data, url, start):
+def _paginate(data, url, start, page_size):
     """Paginate data set content.
 
     :param (dict) data: The data set content.
@@ -116,16 +117,16 @@ def _paginate(data, url, start):
     if start == 1:
         response['previous'] = None
     else:
-        previous_pos = max(1, start - PAGE_SIZE)
+        previous_pos = max(1, start - page_size)
         response['previous'] = url + f'?start={previous_pos}'
-    next_pos = min(qty, start + PAGE_SIZE)
+    next_pos = min(qty, start + page_size)
     if next_pos >= qty:
         response['next'] = None
     else:
         response['next'] = url + f'?start={next_pos}'
     start_idx = start - 1
     response['matches'] = None
-    page = data[start_idx:start_idx + PAGE_SIZE]
+    page = data[start_idx:start_idx + page_size]
     response['items'] = page
     response['count'] = len(page)
     return response
