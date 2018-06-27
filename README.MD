@@ -1,11 +1,13 @@
 # eQ Suggest API
 
 EQ Suggest API provides a simple ReST service that enables a range of data
-sets to be queried with arbitrary terms.  Given a term the API will return a
-set of candidate matches that take an incomplete term, misspellings and typos
-into account.  The API also exposes each data set as paginated resources.
+sets to be queried with arbitrary terms.  Given a query term the API will
+return a set of candidate matches.  Incomplete query terms and misspellings
+(based on single character insertion and deletion) are taken into account.
+The API also exposes each data set as paginated resources.
 
-You can either build and run a docker container or run in a virtual environment**.  First, clone the repo:
+You can either build and run a docker container or run in a virtual environment.
+First, clone the repo:
 
   ```bash
    $ git clone git@github.com:ONSdigital/eq-suggest-api.git

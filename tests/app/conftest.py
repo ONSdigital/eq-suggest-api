@@ -2,12 +2,44 @@
 
 App local `pytest` fixtures.
 """
+import mock
 import pytest
 import json
 
+import app.strategy as strategy
+
 
 @pytest.fixture
-def fake_data_set(tmpdir_factory):
+def fake_strategy():
+
+    class FakeStrategy(strategy.Strategy):
+
+        def candidates(self, query):
+            return mock.Mock()
+
+    return FakeStrategy
+
+
+@pytest.fixture
+def data_set_file(request, tmpdir_factory):
+    """Fake data set file.
+
+    Creates a tmp file for fake data sets and additionally patches the index
+    path to a similar temp location.
+    """
+    index_loc = strategy.INDEX_LOCATION
+
+    def fin():
+        strategy.INDEX_LOCATION = index_loc
+
+    request.addfinalizer(fin)
+    ds = tmpdir_factory.mktemp('data').join('dataset.json')
+    strategy.INDEX_LOCATION = ds.dirname
+    return ds
+
+
+@pytest.fixture
+def fake_data_set(data_set_file):
     """Fake suggest api data set.
 
     Temp-file that contains the 'breakfast' data set.
@@ -18,11 +50,11 @@ def fake_data_set(tmpdir_factory):
         "Shitaki Mushrooms", "Fried Bread", "Fried Eggs", "Scrambled Eggs",
         "Poached Eggs", "Omelette", "Toast", "Raisin Toast", "Croissant"
     ]
-    ds = tmpdir_factory.mktemp('data').join('dataset.json')
-    ds.write('making sure file is created')
-    with open(str(ds), 'w') as f:
+    # ds = data_set_factory.mktemp('data').join('dataset.json')
+    data_set_file.write('making sure file is created')
+    with open(data_set_file.strpath, 'w') as f:
         json.dump(data_set_content, f)
-    return ds
+    return data_set_file
 
 
 @pytest.fixture
@@ -36,7 +68,7 @@ def fake_data_set_data(fake_data_set):
 
 
 @pytest.fixture
-def fake_data_set_large(tmpdir_factory):
+def fake_data_set_large(data_set_file):
     """Large fake suggest api data set.
 
     Temp-file that contains the larger, more complicated, unicode containing
@@ -82,15 +114,14 @@ def fake_data_set_large(tmpdir_factory):
                         "Turks and Caicos Islands",
                         "Virgin Islands of the United States", "Wake Island",
                         "Western Sahara", "\u00c5land Islands"]
-    ds = tmpdir_factory.mktemp('data').join('dataset.json')
-    ds.write('making sure file is created')
-    with open(str(ds), 'w') as f:
+    data_set_file.write('making sure file is created')
+    with open(data_set_file.strpath, 'w') as f:
         json.dump(data_set_content, f)
-    return ds
+    return data_set_file
 
 
 @pytest.fixture
-def fake_data_set_too_many_chiefs(tmpdir_factory):
+def fake_data_set_too_many_chiefs(data_set_file):
     """Large fake suggest api data set.
 
     Temp-file that contains a data set with items that will be similarly
@@ -117,20 +148,18 @@ def fake_data_set_too_many_chiefs(tmpdir_factory):
                         "Chief executive officer",
                         "Chief executive officer (government)",
                         "Chief executive officer (PO)"]
-    ds = tmpdir_factory.mktemp('data').join('dataset.json')
-    ds.write('making sure file is created')
-    with open(str(ds), 'w') as f:
+    data_set_file.write('making sure file is created')
+    with open(data_set_file.strpath, 'w') as f:
         json.dump(data_set_content, f)
-    return ds
+    return data_set_file
 
 
 @pytest.fixture
-def fake_data_set_invalid(tmpdir_factory):
+def fake_data_set_invalid(data_set_file):
     """Invalid fake suggest api data set.
 
     Temp-file that contains non-json data.
     """
     data_set_content = "I am really not json"
-    ds = tmpdir_factory.mktemp('data').join('invalid_dataset.json')
-    ds.write(data_set_content)
-    return ds
+    data_set_file.write(data_set_content)
+    return data_set_file

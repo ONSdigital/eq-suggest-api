@@ -84,3 +84,6 @@ keys.yml
 secrets.yml
 
 requirements.txt
+
+# App specific
+index/
